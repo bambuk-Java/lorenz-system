@@ -113,93 +113,121 @@ function Axes() {
   );
 }
 
-export default function LorenzVisualizer() {
-  const sigma = 10;
-  const rho = 28;
-  const beta = 8 / 3;
-  const dt = 0.01;
-  const steps = 10;
-
-  const [points, setPoints] = useState([]);
-  const [center, setCenter] = useState(new THREE.Vector3(0, 0, 0));
-  const [cameraPosition, setCameraPosition] = useState(new THREE.Vector3(0, 0, 100));
-  const [targetPosition, setTargetPosition] = useState(new THREE.Vector3(0, 0, 0));
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followPointIndex, setFollowPointIndex] = useState(null);
-
-  useEffect(() => {
-    let x = 0.1, y = 0, z = 0;
-    let newPoints = [];
-
-    const interval = setInterval(() => {
-      const nextPoints = calculateLorenz(x, y, z, sigma, rho, beta, dt, steps);
-      x = nextPoints[nextPoints.length - 1][0];
-      y = nextPoints[nextPoints.length - 1][1];
-      z = nextPoints[nextPoints.length - 1][2];
-      newPoints = [...newPoints, ...nextPoints];
-
-      if (newPoints.length > 5000) {
-        newPoints = newPoints.slice(-5000);
-        const updatedCenter = new THREE.Vector3(
-          ...newPoints.reduce((acc, point) => [acc[0] + point[0], acc[1] + point[1], acc[2] + point[2]], [0, 0, 0])
-            .map(coord => coord / newPoints.length)
-        );
-        setCenter(updatedCenter);
+function FollowCamera({ points1, points2, points3, isFollowing, followPointIndex, targetPosition, setTargetPosition, offset }) {
+    const { camera } = useThree();
+  
+    useFrame(() => {
+      if (isFollowing) {
+        let followPoint;
+        if (followPointIndex === 1 && points1.length > 0) {
+          followPoint = points1[points1.length - 1];
+        } else if (followPointIndex === 2 && points2.length > 0) {
+          followPoint = points2[points2.length - 1];
+        } else if (followPointIndex === 3 && points3.length > 0) {
+          followPoint = points3[points3.length - 1];
+        }
+        if (followPoint) {
+          const newTargetPosition = new THREE.Vector3(...followPoint);
+          setTargetPosition(newTargetPosition);
+          camera.position.lerp(newTargetPosition.clone().add(offset), 0.1);
+          camera.lookAt(newTargetPosition);
+        }
       }
-
-      setPoints(newPoints);
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [sigma, rho, beta, dt, steps]);
-
-  useFrame(({ camera }) => {
-    if (isFollowing && followPointIndex !== null) {
-      const followPoints = followPointIndex === 1 ? points1 : followPointIndex === 2 ? points2 : points3;
-      if (followPoints.length > 0) {
-        const lastPoint = new THREE.Vector3(...followPoints[followPoints.length - 1]);
-        const delta = lastPoint.clone().sub(targetPosition);
-        setTargetPosition(lastPoint);
-        setCameraPosition(camera.position.clone().add(delta));
-      }
-    }
-  });
-
-  const switchCamera = (position, target) => {
-    setIsFollowing(false);
-    setCameraPosition(position);
-    setTargetPosition(target);
-  };
-
-  const startFollowing = (pointsIndex) => {
-    setFollowPointIndex(pointsIndex);
-    setIsFollowing(true);
-  };
-
-  const third = Math.floor(points.length / 3);
-  const points1 = points.slice(0, third);
-  const points2 = points.slice(third, 2 * third);
-  const points3 = points.slice(2 * third);
-
-  return (
-    <div className="canvas-container">
-      <Canvas>
-        <ambientLight />
-        <pointLight position={[10, 10, 10]} />
-        <LorenzAttractor points={points1} color="blue" />
-        <LorenzAttractor points={points2} color="red" />
-        <LorenzAttractor points={points3} color="green" />
-        <Controls target={targetPosition} cameraPosition={cameraPosition} />
-        <Axes />
-      </Canvas>
-      <div style={{ position: 'absolute', top: 10, left: 10 }}>
-        <button onClick={() => switchCamera(new THREE.Vector3(0, 0, 100), center)}>Standard</button>
-        <button onClick={() => switchCamera(new THREE.Vector3(100, 0, 0), center)}>Side</button>
-        <button onClick={() => switchCamera(new THREE.Vector3(0, 100, 0), center)}>Top</button>
-        <button onClick={() => startFollowing(1)}>Follow Blue</button>
-        <button onClick={() => startFollowing(2)}>Follow Red</button>
-        <button onClick={() => startFollowing(3)}>Follow Green</button>
+    });
+  
+    return null;
+  }
+  
+ 
+  export default function LorenzVisualizer() {
+    const sigma = 10;
+    const rho = 28;
+    const beta = 8 / 3;
+    const dt = 0.01;
+    const steps = 10;
+  
+    const [points, setPoints] = useState([]);
+    const [center, setCenter] = useState(new THREE.Vector3(0, 0, 0));
+    const [cameraPosition, setCameraPosition] = useState(new THREE.Vector3(0, 0, 100));
+    const [targetPosition, setTargetPosition] = useState(new THREE.Vector3(0, 0, 0));
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [followPointIndex, setFollowPointIndex] = useState(null);
+    const [offset, setOffset] = useState(new THREE.Vector3(0, 50, 50)); // Default offset value for bird's eye view
+  
+    useEffect(() => {
+      let x = 0.1, y = 0, z = 0;
+      let newPoints = [];
+  
+      const interval = setInterval(() => {
+        const nextPoints = calculateLorenz(x, y, z, sigma, rho, beta, dt, steps);
+        x = nextPoints[nextPoints.length - 1][0];
+        y = nextPoints[nextPoints.length - 1][1];
+        z = nextPoints[nextPoints.length - 1][2];
+        newPoints = [...newPoints, ...nextPoints];
+  
+        if (newPoints.length > 5000) {
+          newPoints = newPoints.slice(-5000);
+          const updatedCenter = new THREE.Vector3(
+            ...newPoints.reduce((acc, point) => [acc[0] + point[0], acc[1] + point[1], acc[2] + point[2]], [0, 0, 0])
+              .map(coord => coord / newPoints.length)
+          );
+          setCenter(updatedCenter);
+        }
+  
+        setPoints(newPoints);
+      }, 100);
+  
+      return () => clearInterval(interval);
+    }, [sigma, rho, beta, dt, steps]);
+  
+    const switchCamera = (position, target) => {
+      setIsFollowing(false);
+      setCameraPosition(position);
+      setTargetPosition(target);
+    };
+  
+    const startFollowing = (pointsIndex, offsetValue) => {
+      setFollowPointIndex(pointsIndex);
+      setOffset(offsetValue);
+      setIsFollowing(true);
+    };
+  
+    const third = Math.floor(points.length / 3);
+    const points1 = points.slice(0, third);
+    const points2 = points.slice(third, 2 * third);
+    const points3 = points.slice(2 * third);
+  
+    return (
+      <div className="canvas-container">
+        <Canvas camera={{ position: cameraPosition }}>
+          <ambientLight />
+          <pointLight position={[10, 10, 10]} />
+          <LorenzAttractor points={points1} color="blue" />
+          <LorenzAttractor points={points2} color="red" />
+          <LorenzAttractor points={points3} color="green" />
+          <Controls target={targetPosition} cameraPosition={cameraPosition} />
+          <Axes />
+          <FollowCamera
+            points1={points1}
+            points2={points2}
+            points3={points3}
+            isFollowing={isFollowing}
+            followPointIndex={followPointIndex}
+            targetPosition={targetPosition}
+            setTargetPosition={setTargetPosition}
+            offset={offset}
+          />
+        </Canvas>
+        <div style={{ position: 'absolute', top: 10, left: 10 }}>
+          <button onClick={() => switchCamera(new THREE.Vector3(0, 0, 100), center)}>Standard</button>
+          <button onClick={() => switchCamera(new THREE.Vector3(100, 0, 0), center)}>Side</button>
+          <button onClick={() => switchCamera(new THREE.Vector3(0, 100, 0), center)}>Top</button>
+          <button onClick={() => startFollowing(1, new THREE.Vector3(0, 50, 50))}>Follow Blue</button>
+          <button onClick={() => startFollowing(2, new THREE.Vector3(0, 50, 50))}>Follow Red</button>
+          <button onClick={() => startFollowing(3, new THREE.Vector3(0, 50, 50))}>Follow Green</button>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+  
+  
