@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
-import { calculateLorenz } from './LorenzSystem';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { throttle } from 'lodash';
 
 // Extend OrbitControls to make it available as a JSX component
 extend({ OrbitControls });
@@ -126,32 +126,34 @@ function FollowCamera({ points1, points2, points3, isFollowing, followPointIndex
   const { camera } = useThree();
   const angleRef = useRef(0);
 
-  useFrame(() => {
-    if (isFollowing) {
-      let followPoint;
-      if (followPointIndex === 1 && points1.length > 0) {
-        followPoint = points1[points1.length - 1];
-      } else if (followPointIndex === 2 && points2.length > 0) {
-        followPoint = points2[points2.length - 1];
-      } else if (followPointIndex === 3 && points3.length > 0) {
-        followPoint = points3[points3.length - 1];
-      }
-      if (followPoint) {
-        const newTargetPosition = new THREE.Vector3(...followPoint);
-        setTargetPosition(newTargetPosition);
+  useFrame(
+    throttle(() => {
+      if (isFollowing) {
+        let followPoint;
+        if (followPointIndex === 1 && points1.length > 0) {
+          followPoint = points1[points1.length - 1];
+        } else if (followPointIndex === 2 && points2.length > 0) {
+          followPoint = points2[points2.length - 1];
+        } else if (followPointIndex === 3 && points3.length > 0) {
+          followPoint = points3[points3.length - 1];
+        }
+        if (followPoint) {
+          const newTargetPosition = new THREE.Vector3(...followPoint);
+          setTargetPosition(newTargetPosition);
 
-        // Update angle for orbiting
-        angleRef.current += 0.005; // Slower angle increment
-        const x = newTargetPosition.x + radius * Math.cos(angleRef.current);
-        const y = newTargetPosition.y + radius * Math.sin(angleRef.current);
-        const z = newTargetPosition.z + radius * Math.sin(angleRef.current);
+          // Update angle for orbiting
+          angleRef.current += 0.005; // Slower angle increment
+          const x = newTargetPosition.x + radius * Math.cos(angleRef.current);
+          const y = newTargetPosition.y + radius * Math.sin(angleRef.current);
+          const z = newTargetPosition.z + radius * Math.sin(angleRef.current);
 
-        // Set camera position
-        camera.position.set(x, y, z);
-        camera.lookAt(newTargetPosition);
+          // Set camera position
+          camera.position.set(x, y, z);
+          camera.lookAt(newTargetPosition);
+        }
       }
-    }
-  });
+    }, 16) // Update at 60 FPS
+  );
 
   return null;
 }
@@ -166,7 +168,6 @@ export default function LorenzVisualizer() {
   const updateInterval = 90; // Zeitintervall für die Berechnung
   const displayInterval = 200; // Zeitintervall für das Rendering
 
-  const [pointsBuffer, setPointsBuffer] = useState([]);
   const [points, setPoints] = useState([]);
   const [center, setCenter] = useState(new THREE.Vector3(0, 0, 0));
   const [cameraPosition, setCameraPosition] = useState(new THREE.Vector3(0, 0, 100));
@@ -176,54 +177,27 @@ export default function LorenzVisualizer() {
   const [radius, setRadius] = useState(20); // Orbit radius
 
   useEffect(() => {
-    let x = 0.1, y = 0, z = 0;
-    let newPoints = [];
-    let lastUpdateTime = performance.now();
-    let lastDisplayTime = performance.now();
+    const worker = new Worker(new URL('./LorenzWorker.js', import.meta.url));
 
-    const updatePoints = () => {
-      const now = performance.now();
-      if (now - lastUpdateTime >= updateInterval) {
-        const nextPoints = calculateLorenz(x, y, z, sigma, rho, beta, dt, steps);
-        x = nextPoints[nextPoints.length - 1][0];
-        y = nextPoints[nextPoints.length - 1][1];
-        z = nextPoints[nextPoints.length - 1][2];
-        newPoints = [...newPoints, ...nextPoints];
+    worker.postMessage({ x: 0.1, y: 0, z: 0, sigma, rho, beta, dt, steps, updateInterval });
 
-        if (newPoints.length > 5000) {
-          newPoints = newPoints.slice(-5000);
-          const updatedCenter = new THREE.Vector3(
-            ...newPoints.reduce((acc, point) => [acc[0] + point[0], acc[1] + point[1], acc[2] + point[2]], [0, 0, 0])
-              .map(coord => coord / newPoints.length)
-          );
-          setCenter(updatedCenter);
-        }
+    worker.onmessage = function (e) {
+      const newPoints = e.data.points;
+      setPoints(newPoints);
 
-        setPointsBuffer(newPoints);
-        lastUpdateTime = now;
+      if (newPoints.length > 5000) {
+        const updatedCenter = new THREE.Vector3(
+          ...newPoints.reduce((acc, point) => [acc[0] + point[0], acc[1] + point[1], acc[2] + point[2]], [0, 0, 0])
+            .map(coord => coord / newPoints.length)
+        );
+        setCenter(updatedCenter);
       }
-
-      requestAnimationFrame(updatePoints);
     };
-
-    const displayPoints = () => {
-      const now = performance.now();
-      if (now - lastDisplayTime >= displayInterval) {
-        setPoints(pointsBuffer);
-        lastDisplayTime = now;
-      }
-
-      requestAnimationFrame(displayPoints);
-    };
-
-    updatePoints();
-    displayPoints();
 
     return () => {
-      cancelAnimationFrame(updatePoints);
-      cancelAnimationFrame(displayPoints);
+      worker.terminate();
     };
-  }, [sigma, rho, beta, dt, steps, updateInterval, displayInterval]);
+  }, [sigma, rho, beta, dt, steps, updateInterval]);
 
   const switchCamera = (position, target) => {
     setIsFollowing(false);
